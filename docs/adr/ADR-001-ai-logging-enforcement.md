@@ -18,6 +18,18 @@ Introduce enforcement at orchestration level via Queue Manager workflow:
 - If missing, the item still completes but logs a **policy violation** record.
 - Violations are visible in observability dashboards and can trigger alerts.
 
+### Queue Manager Correlation Mechanism
+
+To strengthen traceability, the Queue Manager will call the AI Gateway Proxy
+after each workflow run completes, providing the `$workflow.name` and `$run.id`.
+The proxy will record these metadata-only entries in the same
+`ai_prompts_log` table but will not forward them to any AI backend.
+
+Because these records are logged immediately after corresponding AI prompt logs,
+chronological order allows reconstruction of which workflow and run generated each AI call,
+without requiring explicit workflow name inclusion in the prompt text itself.
+
+
 ## Rationale
 - Enforces accountability without disrupting workflow UX.
 - Maintains segregation of duties: enforcement is outside business workflows.
