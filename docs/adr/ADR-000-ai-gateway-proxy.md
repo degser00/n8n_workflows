@@ -162,4 +162,4 @@ services:
 
 - [ADR-001](./ADR-001-ai-logging-enforcement.md): AI Logging Enforcement (“Pinky Promise”) Model  
 - `docs/schema/ai_compliance.sql` – Database schema reference  
-- [FastAPI StreamingResponse docs](https://fastapi.tiangolo.com/advanced/streaming-response/)
+- [FastAPI StreamingResponse docs](https://fastapi.tiangolo.com/reference/responses/#streamingresponse)
