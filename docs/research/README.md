@@ -12,5 +12,5 @@ Use it to record:
 When an idea matures, summarize findings here and reference them from a design doc.
 
 File naming convention:
-`YYYYMMDD-topic.md`  
-(example: `20251106-n8n-github-api-research.md`)
+`RES-####-topic.md`  
+(example: `RES-0001-n8n-github-api-research.md`)

@@ -10,4 +10,4 @@ Each document should outline:
 5. **Implementation Notes** – open questions, risks, next steps  
 
 File naming convention:
-`YYYYMMDD-short-title.md`  (example: `20251105-backup-verification-design.md`)
+`DES-####-short-title.md`  (example: `20251105-backup-verification-design.md`)

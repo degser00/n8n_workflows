@@ -13,5 +13,5 @@ Use it for:
 Documents here should be **stable and version-agnostic**, unlike design or ops docs which may evolve with implementation.
 
 File naming convention:
-`topic-name.md`  
-(example: `n8n-env-vars.md`, `github-api-schema.md`)
+`REF-####-topic-name.md`  
+(example: `REF-1234-n8n-env-vars.md`, `REF-2345-github-api-schema.md`)

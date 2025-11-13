@@ -1,0 +1,14 @@
+# Queue Observation and Prioritization
+
+The queue manager only processes known item types.  
+Regularly inspecting the queue for unhandled or unknown items helps inform future automation priorities and backlog planning.
+
+## Why
+- Identify unhandled message types early.
+- Quantify integration drift or missing automation coverage.
+- Use queue metrics to guide what automation capabilities to build next.
+
+## How
+- Periodically list or sample queued items.
+- Track unknown item types over time.
+- Feed insights into backlog refinement and ADR proposals if they suggest design changes.
