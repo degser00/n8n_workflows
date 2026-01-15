@@ -1,38 +1,74 @@
-# Backup Strategy
+# Backups
 
-## Overview
+This section documents backup strategies, configurations, and operational decisions for services in the **n89n** platform.
 
-All services use **incremental forever** backups with block-level deduplication to minimize cloud storage costs and upload bandwidth while maintaining fast, point-in-time recovery.
+Focus is on:
+- Data durability
+- Restore reliability
+- Clear separation between source systems and backup targets
+- Operational clarity over tooling specifics
 
-## Key Principles
+---
 
-- **Daily incremental backups**: Only changed data is uploaded
-- **Direct restoration**: Any backup point can be restored directly without reconstructing chains
-- **Cloud-optimized**: Designed for services like Backblaze B2, AWS S3, etc.
-- **Deduplication**: Content-defined chunking eliminates redundant data across backups
+## Scope
 
-## Technology
+This directory covers:
+- What data is backed up
+- Where it is backed up
+- How often backups run
+- Restore assumptions and limitations
+- Operational notes and known risks
 
-We use [tool name - e.g., Restic/Duplicacy/Kopia] for all backups, providing:
-- Encryption at rest
-- Compression
-- Verification and integrity checks
-- Cross-platform compatibility
+It does **not** document:
+- Application internals
+- One-off recovery incidents (those go to ops incident notes)
+- Backup tooling installation steps
 
-## Retention Policy
+---
 
-- **Daily backups**: Keep last 7 days
-- **Weekly backups**: Keep last 4 weeks  
-- **Monthly backups**: Keep last 12 months
-- **Yearly backups**: Keep last 3 years
+## Currently Covered Systems
 
-## Per-Service Documentation
+### OpenArchiver
+- Email ingestion and archival data
+- Attachments and metadata handling
+- Export and restore assumptions
 
-See individual service backup configurations:
-- [Service A](./service-a-backup.md)
-- [Service B](./service-b-backup.md)
-- [Database](./database-backup.md)
+Documentation lives in:
+- `openaarchiver.md` (or subfolder if it grows)
 
-## Recovery Testing
+### Immich
+- Media originals
+- Derived assets (thumbnails, encodings)
+- Database and metadata consistency assumptions
 
-All backup configurations must include recovery test procedures. Untested backups are not backups.
+Documentation lives in:
+- `immich.md` (or subfolder if it grows)
+
+---
+
+## Structure Guidelines
+
+When adding a new backup target, document:
+- **Data scope** (what is included / excluded)
+- **Backup method** (snapshot, push, pull, export)
+- **Frequency**
+- **Retention**
+- **Restore procedure (high-level)**
+- **Known caveats**
+
+Prefer clarity over completeness.
+
+---
+
+## Related Docs
+
+- `docs/ops/` for operational context
+- `docs/adr/` for architectural decisions impacting backups
+- `OPS-0001-development-prioritization` for sequencing rationale
+
+---
+
+## Status
+
+This is a living document.
+Backup strategies may evolve as storage, compute separation, and compliance requirements mature.
