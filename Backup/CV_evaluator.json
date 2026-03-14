@@ -1,0 +1,364 @@
+{
+  "name": "CVV evaluator",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "// Works for Trello Trigger and Get Card outputs\n\nconst card = $json.action?.data?.card ?? $json;  // prefer nested if present\nconst board = $json.action?.data?.board ?? $json.board ?? {};\nconst list  = $json.action?.data?.list  ?? $json.list  ?? {};\n\n// Collect text sources that may contain URLs\nconst text = [\n  card.name,\n  card.desc,\n  $json.url,        // full card URL (if present)\n  $json.shortUrl,   // short URL\n  $json.shortLink,  // short code\n].filter(Boolean).join('\\n');\n\n// Extract URLs (basic, non-greedy, stops at whitespace/closing parens)\nconst urls = Array.from(new Set(text.match(/https?:\\/\\/[^\\s)]+/g) || []));\n\n// Build a clean payload for downstream nodes\nreturn [{\n  json: {\n    cardId: card.id ?? $json.id ?? null,\n    boardId: $json.idBoard ?? board.id ?? null,\n    listId:  $json.idList  ?? list.id  ?? null,\n    name:    card.name ?? '',\n    desc:    card.desc ?? '',\n    urls,\n    url: urls[0] ?? null\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1392,
+        -352
+      ],
+      "id": "3d230842-fefc-450e-ad81-da7807d72fff",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "9125bed5-0e15-4732-a321-a15e16f9126d",
+              "name": "url",
+              "value": "={{ $json.url }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1568,
+        -208
+      ],
+      "id": "7da3cbe9-ef54-41f2-a2bf-03b2842765ae",
+      "name": "KeepURL"
+    },
+    {
+      "parameters": {
+        "jsCode": "// n8n Code (JavaScript) node\n// Works for 1..n items. Returns { cleanText, title, url, prompt } per item.\n\nfunction stripSections(html) {\n  html = html.replace(/<!--[\\s\\S]*?-->/g, '');\n  html = html\n    .replace(/<script[\\s\\S]*?<\\/script>/gi, '')\n    .replace(/<style[\\s\\S]*?<\\/style>/gi, '')\n    .replace(/<noscript[\\s\\S]*?<\\/noscript>/gi, '')\n    .replace(/<svg[\\s\\S]*?<\\/svg>/gi, '')\n    .replace(/<head[\\s\\S]*?<\\/head>/gi, '');\n  const noisy = [\n    /(id|class)\\s*=\\s*\"(?:nav|navbar|site-header|header|cookie|consent|subscribe|newsletter|breadcrumbs|footer|site-footer|sidebar)[^\"]*\"/gi,\n    /(id|class)\\s*=\\s*'(?:nav|navbar|site-header|header|cookie|consent|subscribe|newsletter|breadcrumbs|footer|site-footer|sidebar)[^']*'/gi,\n  ];\n  for (const rx of noisy) {\n    html = html.replace(new RegExp(`<([a-z0-9:-]+)([^>]*${rx.source}[^>]*)>[\\\\s\\\\S]*?<\\\\/\\\\1>`, 'gi'), '');\n  }\n  return html;\n}\n\nfunction stripTagsToText(html) {\n  html = html.replace(/<(\\/p|\\/div|\\/li|br|\\/h[1-6]|\\/section|\\/article|\\/tr)\\b[^>]*>/gi, '\\n');\n  html = html.replace(/<[^>]+>/g, ' ');\n  return html;\n}\n\nfunction decodeEntities(txt) {\n  const map = { '&nbsp;': ' ', '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '\"', '&#39;': \"'\", '&apos;': \"'\" };\n  txt = txt.replace(/&(nbsp|amp|lt|gt|quot|#39|apos);/g, m => map[m] || m);\n  txt = txt\n    .replace(/&#(\\d+);/g, (_, d) => String.fromCharCode(parseInt(d, 10)))\n    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16)));\n  return txt;\n}\n\nfunction normalizeText(txt) {\n  const boilerplateWords = [\n    'cookie', 'privacy', 'terms', 'subscribe', 'login', 'sign in', 'sign up',\n    'navigation', 'copyright', 'all rights reserved'\n  ];\n  let lines = txt\n    .split('\\n')\n    .map(l => l.replace(/\\s+/g, ' ').trim())\n    .filter(l => l.length > 0);\n\n  lines = lines.filter(l => {\n    const lower = l.toLowerCase();\n    if (l.length < 3) return false;\n    if (boilerplateWords.some(w => lower.includes(w))) return false;\n    return true;\n  });\n\n  txt = lines.join('\\n');\n\n  // 🧹 Dedupe repeated UI/template phrases\n  txt = txt.replace(/\\b(Apply now|Save for Later|Share this job|LinkedIn|Email|Questions\\?|Ask by email|Explore the area|Share)\\b(?!.*(Upload|CV|motivation)).*?(?=\\n|$)/gi, '');\n\n  txt = txt.replace(/(Contact the recruiter|Eelkje Nieuwland|Ask by email|Your place of work)[\\s\\S]*?(?=\\n|$)/gi, '');\n  txt = txt.replace(/\\b(Apply now|Save for Later|Share this job|LinkedIn|Email)\\b(\\s+\\1)+/gi, '$1');\n  txt = txt.replace(/&[a-z]+;/gi, ' ');\n  txt = txt.replace(/\\n{2,}/g, '\\n').replace(/[ \\t]+/g, ' ').trim();\n\n  return txt;\n}\n\nfunction extractTitle(html, fallback) {\n  const titleTag = html.match(/<title[^>]*>([\\s\\S]*?)<\\/title>/i);\n  if (titleTag && titleTag[1]) return decodeEntities(titleTag[1].trim());\n  const og = html.match(/<meta[^>]+property=[\"']og:title[\"'][^>]+content=[\"']([^\"']+)[\"'][^>]*>/i);\n  if (og && og[1]) return decodeEntities(og[1].trim());\n  const h1 = html.match(/<h1[^>]*>([\\s\\S]*?)<\\/h1>/i);\n  if (h1 && h1[1]) return decodeEntities(h1[1].replace(/<[^>]+>/g, '').trim());\n  return fallback || '';\n}\n\nreturn items.map(item => {\n  const j = item.json || {};\n  const html = j.data ?? j.html ?? j.body ?? j.content ?? j.page ?? j.raw ?? '';\n  const url = (Array.isArray(j.urls) ? j.urls[0] : j.urls) ?? j.url ?? null;\n\n  if (typeof html !== 'string' || html.trim() === '') {\n    return { json: { cleanText: '', title: '', url, note: 'No HTML input' } };\n  }\n\n  const stripped = stripSections(html);\n  const textOnly = stripTagsToText(stripped);\n  const decoded = decodeEntities(textOnly);\n\n  // Focus around job-relevant keywords\n  const jobKeywords = /(responsibilit(y|ies)|requirements?|qualifications?|what you(?:'|’)?ll do|about the role|benefits|skills)/i;\n  let focus = decoded;\n  const idx = decoded.search(jobKeywords);\n  if (idx > -1) {\n    const start = Math.max(0, idx - 5000);\n    const end = Math.min(decoded.length, idx + 9000);\n    focus = decoded.slice(start, end);\n  }\n\n  // 🧹 Dedupe repeated template lines before normalization\n  focus = focus.replace(/(Apply now|Save for Later|Share this job|Email|LinkedIn)+/gi, '$1');\n\n  const cleanText = normalizeText(focus);\n  const title = extractTitle(html, j.title);\n\n  // Build a clean AI prompt\n  const prompt = `\nAct as a professional HR data analyst specializing in structured job-posting extraction.\n\nYour task is to analyze the following job advertisement and return a precise, valid JSON object with these fields:\n\n{\n  \"job_title\": \"\",\n  \"company_name\": \"\",\n  \"location\": \"\",\n  \"salary_min\": \"\",\n  \"salary_max\": \"\",\n  \"salary_currency\": \"\",\n  \"salary_type\": \"\",\n  \"salary_status\": \"\",\n  \"short_description\": \"\",\n  \"responsibilities\": [],\n  \"qualifications\": [],\n  \"benefits\": [],\n  \"employment_type\": \"\",\n  \"experience_level\": \"\",\n  \"industry\": \"\",\n  \"skills\": [],\n  \"education\": \"\",\n  \"how_to_apply\": \"\",\n  \"source_url\": \"\"\n}\n\nGuidelines:\n- Use plain text only, no markdown or code fences.\n- Keep all content factual — do not invent company names or data.\n- If salary information is missing, estimate a reasonable range based on context, job title, and seniority.\n  - Set \"salary_status\" to \"estimated\" for inferred values, or \"offered\" if clearly stated.\n- Retain all skills and soft skills (leadership, communication, teamwork, adaptability, etc.), List at least 8–10 skills, combining technical and behavioral ones (e.g., leadership, communication, adaptability, strategic thinking, problem solving).\n- Include behavioral / cultural expectations as soft skills if listed under \"How to succeed\" or \"About you\".\n- If a field is not mentioned, leave it as an empty string or empty array.\n- Preserve any currency symbols and units (€, $, £, etc.).\n- Summarize \"short_description\" in 3–4 sentences.\n- Always output \"source_url\" as provided, even if null.\n- JSON must be syntactically valid.\n\nJob Title: ${title}\n\nInput Job Ad Text:\n${cleanText}\n\nSource URL:\n${url}\n`.trim();\n\n  return {\n    json: { cleanText, title, url, prompt }\n  };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1904,
+        -336
+      ],
+      "id": "5fb3dba1-41a1-4aaa-a0bb-e0449c7731fe",
+      "name": "HTML cleanup"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1568,
+        -352
+      ],
+      "id": "9b666c33-2582-44c9-8814-bbcce21ff651",
+      "name": "GET URL content"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1744,
+        -336
+      ],
+      "id": "0001a417-333b-473d-94a1-911211cf9896",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "content": "AUDITABILITY:\nadd storage to DB later; also implement clean up of records older than 120 days",
+        "height": 224,
+        "width": 262,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        3600,
+        -512
+      ],
+      "typeVersion": 1,
+      "id": "f32a47aa-29a3-4a79-a47b-93f667898ee3",
+      "name": "Sticky Note",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "content": "Confirm:\ncard deleted --> skip\ncard moved --> skip\ncard found --> proceed"
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        576,
+        -480
+      ],
+      "typeVersion": 1,
+      "id": "091011a4-1f75-4802-85ac-596bdc2ebe39",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "jsCode": "let raw = $json.text || $json.response || $json.data || '';\nlet parsed;\n\ntry {\n  parsed = JSON.parse(raw);\n} catch (e) {\n  const match = raw.match(/\\{[\\s\\S]*\\}/);\n  if (match) {\n    try { parsed = JSON.parse(match[0]); } catch {}\n  }\n}\n\nif (!parsed) {\n  return [{ json: { error: 'Failed to parse JSON', raw } }];\n}\n\n// ✅ Quality / completeness check\nconst required = [\"job_title\", \"company_name\", \"location\", \"short_description\"];\nfor (const key of required) {\n  if (!parsed[key] || (typeof parsed[key] === 'string' && parsed[key].trim() === '')) {\n    parsed.warning = (parsed.warning || []).concat(`Missing ${key}`);\n  }\n}\n\n// ✅ Return clean, structured result\nreturn [{ json: parsed }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2352,
+        -368
+      ],
+      "id": "8e24b4d6-7655-437f-91c1-858622f29aaa",
+      "name": "format job_ad JSON"
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "query": "Mark_Segalis_MasterCV_2025.json"
+      },
+      "type": "n8n-nodes-base.microsoftOneDrive",
+      "typeVersion": 1,
+      "position": [
+        2496,
+        -432
+      ],
+      "id": "089b7b99-3651-4308-8844-f59045b5259a",
+      "name": "Search a file",
+      "credentials": {
+        "microsoftOneDriveOAuth2Api": {
+          "id": "H9aHPnK6m5HvBJ0X",
+          "name": "Microsoft Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": "={{ $json.id }}"
+      },
+      "type": "n8n-nodes-base.microsoftOneDrive",
+      "typeVersion": 1,
+      "position": [
+        2816,
+        -432
+      ],
+      "id": "7807673c-4185-45cc-bebb-9f95d896f757",
+      "name": "Fetch master CV",
+      "credentials": {
+        "microsoftOneDriveOAuth2Api": {
+          "id": "H9aHPnK6m5HvBJ0X",
+          "name": "Microsoft Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "fromJson",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        2960,
+        -432
+      ],
+      "id": "7e680753-e541-41d6-9585-ce56eb7724b0",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.prompt }}",
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        3456,
+        -352
+      ],
+      "id": "e151a3e2-41ce-4fce-9ae7-83f53aac26a7",
+      "name": "Fit Analysis"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.prompt }}",
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        2064,
+        -336
+      ],
+      "id": "2c435604-7c37-4631-b236-e6ea12ec1659",
+      "name": "Job ad to JSON parsing"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        3136,
+        -352
+      ],
+      "id": "e4579a8e-dde1-4766-84f8-7ce56bbf9f81",
+      "name": "CV+Job"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Job ad comes from item 1, CV from item 0\nconst cv  = $item(0).$json;\nconst job = $item(1).$json;\n\n// Build the full LLM prompt\nconst prompt = `\nYou are an experienced HR recruiter and candidate-fit assessor for senior product leadership roles.\n\nCompare the candidate’s CV against the job description below and return **only a valid JSON object** — no explanations, commentary, or markdown.\n\nThe JSON must strictly follow this schema:\n{\n  \"fit_percent\": <integer>,\n  \"fit_summary\": <string>,\n  \"matched_skills\": [<string>],\n  \"missing_skills\": [<string>],\n  \"recommendations\": [<string>]\n}\n\n### Evaluation Guidelines ###\n\n1. **Overall Fit**\n   - Score between 0–100.\n   - Base 60% of the score on skill, experience, and leadership alignment.\n   - Base 40% on domain or industry relevance (e.g., Financial Markets, FinTech, or related areas).\n   - Penalize heavily if the candidate lacks explicit or transferable domain experience.\n\n2. **fit_summary**\n   - Provide 3–5 concise, factual sentences describing alignment and gaps.\n   - Explicitly mention if the candidate lacks domain experience but shows transferable skills.\n\n3. **matched_skills**\n   - Include skills clearly demonstrated in both job description and CV.\n   - Count leadership, agile, compliance, or delivery traits only if supported by examples.\n\n4. **missing_skills**\n   - List technical, domain, or strategic skills the job requires but are missing in the CV.\n   - Emphasize Financial Markets, Treasury, Trading, or Risk Management gaps if applicable.\n\n5. **recommendations**\n   - Suggest 2–4 specific, actionable improvements to strengthen fit.\n   - Include both domain and strategic development recommendations.\n\n---\nReturn **only** the JSON object. Do not include markdown, prose, or code fences.\nIf uncertain, return an empty JSON with the same keys.\n---\n\n### JOB DESCRIPTION ###\n${JSON.stringify(job, null, 2)}\n\n### CANDIDATE CV ###\n${JSON.stringify(cv, null, 2)}\n`;\n\n// Output the prompt\nreturn [{ json: { prompt } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3296,
+        -352
+      ],
+      "id": "79b10ef2-c91b-489a-952e-8c82b0a2764d",
+      "name": "Fit analysis promt"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "id": {
+          "__rl": true,
+          "value": "={{ $json.card_id }}",
+          "mode": "id"
+        },
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.trello",
+      "typeVersion": 1,
+      "position": [
+        624,
+        -352
+      ],
+      "id": "0c14bb37-a516-4a65-9b2b-1e55df5d100b",
+      "name": "Get a card",
+      "credentials": {
+        "trelloApi": {
+          "id": "9A7cDAtlds8sBGAZ",
+          "name": "Trello account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "id": {
+          "__rl": true,
+          "value": "={{ $json.card_id }}",
+          "mode": "id"
+        },
+        "updateFields": {
+          "idList": "68f689ca8afd80e67800b492"
+        }
+      },
+      "type": "n8n-nodes-base.trello",
+      "typeVersion": 1,
+      "position": [
+        1216,
+        -352
+      ],
+      "id": "71960564-8dc5-40f5-b8c0-914956372d1d",
+      "name": "move to Analyzing",
+      "credentials": {
+        "trelloApi": {
+          "id": "9A7cDAtlds8sBGAZ",
+          "name": "Trello account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "numberInputs": 3
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        4096,
+        16
+      ],
+      "id": "64caf5e6-d824-4cc5-9653-3e8cea051ead",
+      "name": "Merge1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "9125bed5-0e15-4732-a321-a15e16f9126d",
+              "name": "ID",
+              "value": "={{ $json.id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1680,
+        64
+      ],
+      "id": "ae022e4c-0dcd-4043-b81c-353269372570",
+      "name": "KeepCardID"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "id": {
+          "__rl": true,
+          "value": "={{ $json.cardId }}",
+          "mode": "id"
+        },
+        "updateFields": {
+          "desc": "={{ $json.newDesc }}",
+          "idList": "68e54c63a6a204038178b7f4",
+          "name": "={{ $json.newTitle }}"
+        }
+      },
+      "type": "n8n-nodes-base.trello",
+      "typeVersion": 1,
+      "position": [
+        4432,
+        32
+      ],
+      "id": "0bec2d21-356c-4016-b8aa-03be2c52fe1a",
+      "name": "move to Evaluated",
+      "credentials": {
+        "trelloApi": {
+          "id": "9A7cDAtlds8sBGAZ",
+          "name": "Trello account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "let raw = $json.text || $json.response || $json.data || '';\nlet parsed = null;\n\n// Step 1: Trim noise & invisible characters\nraw = raw.trim().replace(/[\\u0000-\\u001F]+/g, '');\n\n// Step 2: Try parsing as-is\ntry {\n  parsed = JSON.parse(raw);\n} catch (e1) {\n  // Step 3: Try to extract partial JSON\n  let match = raw.match(/\\{[\\s\\S]*$/); // take from first { to end of string\n  if (match) {\n    let jsonStr = match[0];\n\n    // Step 4: Attempt to auto-close missing structures\n    const openBrackets = (jsonStr.match(/\\[/g) || []).length;\n    const closeBrackets = (jsonStr.match(/\\]/g) || []).length;\n    const openBraces = (jsonStr.match(/\\{/g) || []).length;\n    const closeBraces = (jsonStr.match(/\\}/g) || []).length;\n\n    if (openBrackets > closeBrackets) jsonStr += ']';\n    if (openBraces > closeBraces) jsonStr += '}';\n\n    // Step 5: Clean trailing commas\n    jsonStr = jsonStr.replace(/,\\s*([\\]}])/g, '$1');\n\n    try {\n      parsed = JSON.parse(jsonStr);\n    } catch (e2) {\n      // Step 6: Last resort — wrap entire string and fix quotes if needed\n      jsonStr = jsonStr.replace(/\"([^\"]*)$/g, '$1\"'); // close final quote\n      if (openBrackets > closeBrackets) jsonStr += ']';\n      if (openBraces > closeBraces) jsonStr += '}';\n\n      try {\n        parsed = JSON.parse(jsonStr);\n      } catch (e3) {\n        return [{ json: { error: 'Failed to recover JSON', raw } }];\n      }\n    }\n  } else {\n    return [{ json: { error: 'No JSON structure found', raw } }];\n  }\n}\n\n// Step 7: Return result or fallback\nreturn [{ json: parsed || { error: 'Empty parse result', raw } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3728,
+        -352
+      ],
+      "id": "8f909eb2-40d7-4dfb-9491-654948f4f10b",
+      "name": "Parse fit analysis JSON"
+    },
+    {
+      "parameters"
