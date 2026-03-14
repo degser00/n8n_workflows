@@ -1,0 +1,167 @@
+{
+  "name": "internal webhook test",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "internal/test",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "5880ac8b-8092-4a60-a3ca-6532662033fa",
+      "name": "test Webhook listener",
+      "webhookId": "397a9b34-fe28-4290-937f-3295d97f1408"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        224,
+        304
+      ],
+      "id": "19c95f0d-93e0-4358-ae2c-5352fbd91381",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Access the webhook payload\nconst payload = $input.all()[0].json;\n\n// Safely process the data with checks\nconst processed = {\n  id: payload.card_id || 'unknown',\n  title: (payload.card_name || 'Untitled').toUpperCase(),\n  received_at: new Date().toISOString(),\n  is_urgent: payload.card_name ? payload.card_name.toLowerCase().includes('urgent') : false,\n  source: 'internal_webhook'\n};\n\n// Log it (visible in execution logs)\nconsole.log('Processed webhook data:', processed);\n\n// Return the processed data to the next node\nreturn [{ json: processed }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "0b203f73-cae8-4806-8c2c-210e52b0b5ba",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "content": "# Local Webhook Test Workflow\n\nThis workflow verifies Issue #23 by confirming that a local n8n webhook can receive and process POST requests without being exposed externally.\n\n## Steps\n\n1. **Webhook Listener (`POST /internal/test`)**  \n   Receives a local JSON payload.\n\n2. **JavaScript Node**  \n   Processes and normalizes the received data and adds a server timestamp.\n\n3. **Manual Trigger + HTTP Request**  \n   Sends a local POST request to `http://localhost:5678/webhook/internal/test` to validate that the webhook works locally.\n\n## Result\n\nLocal webhook functionality works correctly and remains local-only.\n",
+        "height": 672,
+        "width": 400,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -544,
+        -160
+      ],
+      "typeVersion": 1,
+      "id": "bb790f7f-e72a-49e3-b279-9a55f2fe64c1",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "## Listener",
+        "height": 240,
+        "width": 528
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -80,
+        -64
+      ],
+      "typeVersion": 1,
+      "id": "072e186e-ee3e-470c-a2ec-e14cb822066d",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "## Manual trigger",
+        "height": 240,
+        "width": 528
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        96,
+        240
+      ],
+      "typeVersion": 1,
+      "id": "411fde32-8aec-41cd-98bc-e40130886a54",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://n8n:5678/webhook/internal/test",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"event\": \"test\",\n  \"timestamp\": \"{{ $now.toISO() }}\",\n  \"data\": {\n    \"card_id\": \"12345\",\n    \"card_name\": \"Test Card\",\n    \"action\": \"created\"\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        400,
+        304
+      ],
+      "id": "d74dfecc-7430-43af-b152-2d424c89b96c",
+      "name": "HTTP Request1"
+    }
+  ],
+  "pinData": {
+    "HTTP Request1": [
+      {
+        "json": {
+          "name": "First item",
+          "code": 1
+        }
+      },
+      {
+        "json": {
+          "name": "Second item",
+          "code": 2
+        }
+      }
+    ]
+  },
+  "connections": {
+    "test Webhook listener": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "c620eb41-77fe-474c-b2af-633cd89aa0b2",
+  "meta": {
+    "instanceId": "5a01f1abeaee63a7b7d0d464ecf4ef5e391a7951061fea813f784bb7d3ef81bc"
+  },
+  "id": "N5TuorrWWTWtyEc7",
+  "tags": [
+    {
+      "updatedAt": "2025-11-14T17:51:12.587Z",
+      "createdAt": "2025-11-14T17:51:12.587Z",
+      "id": "0e2mlraPGue0IVAf",
+      "name": "test"
+    }
+  ]
+}

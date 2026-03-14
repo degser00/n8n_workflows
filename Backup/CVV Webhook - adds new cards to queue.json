@@ -1,0 +1,287 @@
+{
+  "name": "CVV Webhook - adds new cards to queue",
+  "nodes": [
+    {
+      "parameters": {
+        "id": "68e54c63a6a204038178b7c1"
+      },
+      "type": "n8n-nodes-base.trelloTrigger",
+      "typeVersion": 1,
+      "position": [
+        -272,
+        -32
+      ],
+      "id": "40b20cbb-0213-4817-b25e-eb92c28d5c2d",
+      "name": "Trello Trigger",
+      "webhookId": "007ad273-80be-445f-b38f-e4bd5f951c86",
+      "credentials": {
+        "trelloApi": {
+          "id": "9A7cDAtlds8sBGAZ",
+          "name": "Trello account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Step 1: Ensure the job_queue table exists\nCREATE TABLE IF NOT EXISTS job_queue (\n  id SERIAL PRIMARY KEY,\n  card_id TEXT UNIQUE NOT NULL,          -- Trello card ID\n  card_name TEXT,                        -- Card title\n  card_desc TEXT,                        -- Card description (\"desc\")\n  board_id TEXT,                         -- Board ID\n  board_name TEXT,                       -- Board name\n  list_id TEXT,                          -- List ID\n  status TEXT DEFAULT 'pending',         -- pending / processing / done / error / skipped\n  err_code TEXT DEFAULT NULL,            -- e.g. DUPLICATE_INSERT, RETRY, MANUAL_SKIP\n  source_event TEXT DEFAULT NULL,        -- Trello webhook action type (e.g. createCard, updateCard)\n  created_at TIMESTAMP DEFAULT NOW(),\n  updated_at TIMESTAMP DEFAULT NOW()\n);\n\n-- Step 2: Insert or update intelligently\nINSERT INTO job_queue (\n  card_id,\n  card_name,\n  card_desc,\n  board_id,\n  board_name,\n  list_id,\n  status,\n  source_event\n)\nVALUES (\n  '{{$json.action.data.card.id}}',\n  '{{$json.action.data.card.name}}',\n  '{{$json.action.data.card.desc}}',\n  '{{$json.action.data.board.id}}',\n  '{{$json.action.data.board.name}}',\n  '{{$json.action.data.list.id}}',\n  'pending',\n  '{{$json.action.type}}'\n)\nON CONFLICT (card_id)\nDO UPDATE\nSET\n  card_name = EXCLUDED.card_name,\n  card_desc = EXCLUDED.card_desc,\n  board_id = EXCLUDED.board_id,\n  board_name = EXCLUDED.board_name,\n  list_id = EXCLUDED.list_id,\n  source_event = EXCLUDED.source_event,\n  updated_at = NOW(),\n  err_code = 'DUPLICATE_INSERT';\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        144,
+        -48
+      ],
+      "id": "d540bd57-6fa5-4743-bb80-fb6954b67669",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "tk3mUfOzODbiEakR",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "b7d832ea-d4ba-46e8-bbad-05cb227a6aad",
+              "leftValue": "={{ $json.action.display.translationKey }}",
+              "rightValue": "action_create_card",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -80,
+        -32
+      ],
+      "id": "8b41f547-17c0-4918-8a0b-f79d1bbda41e",
+      "name": "If"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        336,
+        272
+      ],
+      "id": "08a2b858-065e-4a08-be8c-3d1563201968",
+      "name": "No new card is created"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        336,
+        -48
+      ],
+      "id": "a2aa9909-794f-4d09-8a95-53c640e6a76b",
+      "name": "New card added to queue"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT status, COUNT(*) FROM job_queue GROUP BY status;\n\nSELECT *\nFROM job_queue\nORDER BY created_at DESC\nLIMIT 50;\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -816,
+        -1248
+      ],
+      "id": "f7d22b3e-e78e-4690-bfb5-96c566545d56",
+      "name": "View queue",
+      "credentials": {
+        "postgres": {
+          "id": "tk3mUfOzODbiEakR",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## QUEUE ACTIONS\n",
+        "height": 832,
+        "width": 304
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -896,
+        -1344
+      ],
+      "typeVersion": 1,
+      "id": "b91ee3e4-cbaa-43c3-a2db-f8627c60f192",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE job_queue\nSET status = 'skipped',\n    updated_at = NOW()\nWHERE status IN ('pending', 'processing');\n\nSELECT status, COUNT(*) FROM job_queue GROUP BY status;\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -816,
+        -1088
+      ],
+      "id": "04584fc0-6fe6-42a6-bc7e-37f067e5851e",
+      "name": "Skip all",
+      "credentials": {
+        "postgres": {
+          "id": "tk3mUfOzODbiEakR",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE job_queue\nSET status = 'skipped',\n    updated_at = NOW()\nWHERE status IN ('processing');\n\nSELECT status, COUNT(*) FROM job_queue GROUP BY status;\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -816,
+        -912
+      ],
+      "id": "1bc613a9-7268-4077-80de-70a1888ac034",
+      "name": "Skip Pending",
+      "credentials": {
+        "postgres": {
+          "id": "tk3mUfOzODbiEakR",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DROP TABLE IF EXISTS job_queue;\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -368,
+        -704
+      ],
+      "id": "9e6518cb-5538-47e6-82c7-7bd28728b1f9",
+      "name": "Drop table",
+      "credentials": {
+        "postgres": {
+          "id": "tk3mUfOzODbiEakR",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## QUEUE ACTIONS\n",
+        "height": 288,
+        "width": 304,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -448,
+        -816
+      ],
+      "typeVersion": 1,
+      "id": "aa2cfca6-eaff-4639-8865-e62caf2388d1",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "add list name, table name"
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -32,
+        -176
+      ],
+      "typeVersion": 1,
+      "id": "639fdd1a-3ea1-4a03-98a2-2424a0ce3764",
+      "name": "Sticky Note1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Trello Trigger": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "New card added to queue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No new card is created",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false,
+    "timeSavedPerExecution": 0
+  },
+  "versionId": "f0148191-4dba-4d4d-80d8-220139e2f4ab",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "5a01f1abeaee63a7b7d0d464ecf4ef5e391a7951061fea813f784bb7d3ef81bc"
+  },
+  "id": "zu2ajF9OeObS5Js8",
+  "tags": []
+}
